@@ -3,26 +3,32 @@ import requests
 from datetime import datetime, timedelta
 import time
 
-# Establecer tema oscuro (esto es solo para Streamlit Cloud o config local)
-st.set_page_config(page_title="Reporte de Visitas", page_icon="📅", layout="centered")
+# Configuración de la página
+st.set_page_config(page_title="Reportes SimpliRoute", page_icon="📊", layout="centered")
 
+# Estilos (opcional)
 st.markdown(
     """
     <style>
-    body {
-        background-color: #0E1117;
-        color: #FFFFFF;
+    .stButton>button {
+        width: 100%;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title("📊 Reporte de Visitas - SimpliRoute")
+st.title("📊 Reportes SimpliRoute")
+
+# --- NUEVO: Selector para el tipo de reporte ---
+tipo_reporte = st.selectbox(
+    "Selecciona el tipo de reporte que deseas generar",
+    ("Visitas", "Rutas")
+)
 
 # Inputs de usuario
 token = st.text_input("🔐 Token de autenticación")
-correo = st.text_input("📧 Correo de usuario")
+correo = st.text_input("📧 Correo de usuario (para recibir el reporte)")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -30,15 +36,15 @@ with col1:
 with col2:
     final = st.date_input("📅 Fecha final", value=datetime.today())
 
-opcion = st.radio("📆 ¿Cómo quieres dividir el rango?", ("Semanal", "Quincenal", "Mensual"))
+opcion = st.radio("📆 ¿Cómo quieres dividir el rango de fechas?", ("Semanal", "Quincenal", "Mensual"))
 
 # Botón de ejecución
-if st.button("🚀 Ejecutar solicitudes"):
+if st.button("🚀 Generar Reporte"):
     if not token or not correo:
         st.warning("⚠️ Debes ingresar el token y el correo.")
         st.stop()
 
-    # Funciones para dividir rangos
+    # Funciones para dividir rangos (sin cambios)
     def dividir_rango_por_dias(inicio, final, dias):
         rangos = []
         while inicio <= final:
@@ -52,13 +58,15 @@ if st.button("🚀 Ejecutar solicitudes"):
     def dividir_rango_por_mes(inicio, final):
         rangos = []
         while inicio <= final:
-            ultimo_dia_mes = (inicio.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-            fin_mes = min(ultimo_dia_mes, final)
+            # Lógica para obtener el último día del mes actual
+            siguiente_mes = inicio.replace(day=28) + timedelta(days=4)
+            ultimo_dia_mes = siguiente_mes - timedelta(days=siguiente_mes.day)
+            fin_mes = min(ultimo_dia_mes.date(), final)
             rangos.append((inicio.strftime("%Y-%m-%d"), fin_mes.strftime("%Y-%m-%d")))
             inicio = fin_mes + timedelta(days=1)
         return rangos
 
-    # Determinar rangos
+    # Determinar rangos (sin cambios)
     if opcion == "Semanal":
         rangos = dividir_rango_por_dias(inicio, final, 7)
     elif opcion == "Quincenal":
@@ -66,29 +74,58 @@ if st.button("🚀 Ejecutar solicitudes"):
     elif opcion == "Mensual":
         rangos = dividir_rango_por_mes(inicio, final)
 
-    # Encabezados con token del usuario
-    headers = {
-        "authorization": f"Token {token}",
-        "origin": "https://app2.simpliroute.com",
-        "user-agent": "Mozilla/5.0",
-        "accept": "application/json",
-        "referer": "https://app2.simpliroute.com/",
-    }
+    # --- LÓGICA MODIFICADA: Definir URL y headers según la selección ---
+    base_url = ""
+    headers = {}
 
-    for inicio_rango, final_rango in rangos:
-        st.write(f"🔍 Consultando del **{inicio_rango}** al **{final_rango}**")
-        url = f"https://api.simpliroute.com/v1/reports/visits/from/{inicio_rango}/to/{final_rango}/?email={correo}"
-        response = requests.get(url, headers=headers)
+    if tipo_reporte == "Visitas":
+        st.info("Preparando para generar reporte de **Visitas**...")
+        base_url = "https://api.simpliroute.com/v1/reports/visits"
+        headers = {
+            "authorization": f"Token {token}",
+            "origin": "https://app2.simpliroute.com",
+            "referer": "https://app2.simpliroute.com/",
+            "accept": "application/json",
+            "user-agent": "Mozilla/5.0",
+        }
+    elif tipo_reporte == "Rutas":
+        st.info("Preparando para generar reporte de **Rutas**...")
+        base_url = "https://api-gateway.simpliroute.com/v1/reports/routes"
+        headers = {
+            "authorization": f"Token {token}",
+            "origin": "https://app3.simpliroute.com", # Dato del curl
+            "referer": "https://app3.simpliroute.com/", # Dato del curl
+            "accept": "application/json",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        }
 
-        try:
-            data = response.json()
-            if isinstance(data, list):
-                st.success(f"✅ {len(data)} registros recibidos.")
-            else:
-                st.warning("⚠️ Formato inesperado en la respuesta.")
-        except:
-            st.error(f"❌ Error al decodificar respuesta: {response.text}")
+    # Barra de progreso
+    progress_bar = st.progress(0)
+    total_rangos = len(rangos)
+    
+    # Bucle para ejecutar las solicitudes
+    with st.spinner('Procesando solicitudes...'):
+        for i, (inicio_rango, final_rango) in enumerate(rangos):
+            st.write(f"🔍 Consultando del **{inicio_rango}** al **{final_rango}**")
+            
+            # Construcción de la URL final
+            url = f"{base_url}/from/{inicio_rango}/to/{final_rango}/?email={correo}"
+            
+            try:
+                response = requests.get(url, headers=headers)
+                response.raise_for_status() # Lanza un error para respuestas 4xx o 5xx
 
-        time.sleep(3)
+                st.success(f"✅ Solicitud para el rango {inicio_rango} a {final_rango} enviada correctamente. El reporte llegará a tu correo.")
 
-    st.success("✅ Todas las solicitudes han sido procesadas.")
+            except requests.exceptions.HTTPError as err:
+                st.error(f"❌ Error HTTP en la solicitud: {err.response.status_code} - {err.response.text}")
+            except requests.exceptions.RequestException as err:
+                st.error(f"❌ Error de conexión: {err}")
+            
+            # Actualizar barra de progreso
+            progress_bar.progress((i + 1) / total_rangos)
+            
+            # Esperar antes de la siguiente solicitud para no saturar la API
+            time.sleep(3)
+
+    st.success("✅ ¡Proceso finalizado! Revisa tu correo electrónico para los reportes.")

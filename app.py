@@ -20,7 +20,7 @@ st.markdown(
 
 st.title("📊 Reportes SimpliRoute")
 
-# --- NUEVO: Selector para el tipo de reporte ---
+# Selector para el tipo de reporte
 tipo_reporte = st.selectbox(
     "Selecciona el tipo de reporte que deseas generar",
     ("Visitas", "Rutas")
@@ -44,7 +44,7 @@ if st.button("🚀 Generar Reporte"):
         st.warning("⚠️ Debes ingresar el token y el correo.")
         st.stop()
 
-    # Funciones para dividir rangos (sin cambios)
+    # Funciones para dividir rangos
     def dividir_rango_por_dias(inicio, final, dias):
         rangos = []
         while inicio <= final:
@@ -58,15 +58,17 @@ if st.button("🚀 Generar Reporte"):
     def dividir_rango_por_mes(inicio, final):
         rangos = []
         while inicio <= final:
-            # Lógica para obtener el último día del mes actual
             siguiente_mes = inicio.replace(day=28) + timedelta(days=4)
             ultimo_dia_mes = siguiente_mes - timedelta(days=siguiente_mes.day)
-            fin_mes = min(ultimo_dia_mes.date(), final)
+            
+            # --- AQUÍ ESTÁ LA CORRECCIÓN ---
+            fin_mes = min(ultimo_dia_mes, final)
+            
             rangos.append((inicio.strftime("%Y-%m-%d"), fin_mes.strftime("%Y-%m-%d")))
             inicio = fin_mes + timedelta(days=1)
         return rangos
 
-    # Determinar rangos (sin cambios)
+    # Determinar rangos
     if opcion == "Semanal":
         rangos = dividir_rango_por_dias(inicio, final, 7)
     elif opcion == "Quincenal":
@@ -74,7 +76,7 @@ if st.button("🚀 Generar Reporte"):
     elif opcion == "Mensual":
         rangos = dividir_rango_por_mes(inicio, final)
 
-    # --- LÓGICA MODIFICADA: Definir URL y headers según la selección ---
+    # Definir URL base y headers según la selección
     base_url = ""
     headers = {}
 
@@ -93,8 +95,8 @@ if st.button("🚀 Generar Reporte"):
         base_url = "https://api-gateway.simpliroute.com/v1/reports/routes"
         headers = {
             "authorization": f"Token {token}",
-            "origin": "https://app3.simpliroute.com", # Dato del curl
-            "referer": "https://app3.simpliroute.com/", # Dato del curl
+            "origin": "https://app3.simpliroute.com",
+            "referer": "https://app3.simpliroute.com/",
             "accept": "application/json",
             "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
         }
@@ -103,17 +105,15 @@ if st.button("🚀 Generar Reporte"):
     progress_bar = st.progress(0)
     total_rangos = len(rangos)
     
-    # Bucle para ejecutar las solicitudes
     with st.spinner('Procesando solicitudes...'):
         for i, (inicio_rango, final_rango) in enumerate(rangos):
             st.write(f"🔍 Consultando del **{inicio_rango}** al **{final_rango}**")
             
-            # Construcción de la URL final
             url = f"{base_url}/from/{inicio_rango}/to/{final_rango}/?email={correo}"
             
             try:
                 response = requests.get(url, headers=headers)
-                response.raise_for_status() # Lanza un error para respuestas 4xx o 5xx
+                response.raise_for_status()
 
                 st.success(f"✅ Solicitud para el rango {inicio_rango} a {final_rango} enviada correctamente. El reporte llegará a tu correo.")
 
@@ -122,10 +122,7 @@ if st.button("🚀 Generar Reporte"):
             except requests.exceptions.RequestException as err:
                 st.error(f"❌ Error de conexión: {err}")
             
-            # Actualizar barra de progreso
             progress_bar.progress((i + 1) / total_rangos)
-            
-            # Esperar antes de la siguiente solicitud para no saturar la API
             time.sleep(3)
 
     st.success("✅ ¡Proceso finalizado! Revisa tu correo electrónico para los reportes.")
